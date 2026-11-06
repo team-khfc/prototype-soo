@@ -36,9 +36,9 @@ function renderSettings(){
     </div>
   <div class="tabs" role="tablist" aria-label="기관 설정 항목">${STABS.map(([k,l])=>`<button type="button" role="tab" id="tab-${k}" aria-controls="tp-${k}" aria-selected="${k===tab}" tabindex="${k===tab?0:-1}" data-act="stab" data-k="${k}">${l}${k==='questions'?` <span class="tcount">${b.qs.filter(q=>q.on).length}</span>`:''}</button>`).join('')}</div>
   <section class="tabpanel" role="tabpanel" id="tp-${tab}" aria-labelledby="tab-${tab}">${({questions:tabQuestions,workflow:tabWorkflow,form:tabForm,rules:tabRules,versions:tabVersions})[tab]()}</section>
-  ${tab==='versions'?'':`<div class="actions"><button type="button" class="btn btn-tertiary" data-act="discard" ${changes.length?'':'disabled aria-describedby="nochg"'}>초안 변경 취소</button>
-    ${changes.length?'':'<span class="help" id="nochg">게시본과 다른 내용이 없어 취소하거나 게시할 내용이 없습니다.</span>'}
-    <div class="btn-row"><button type="button" class="btn" data-act="save-draft">설정 초안 저장</button><button type="button" class="btn btn-primary" data-act="publish">변경 검토·게시</button></div></div>`}`;
+  ${tab==='versions'?'':`<div class="actions"><button type="button" class="btn btn-tertiary" data-act="discard" aria-describedby="nochg" ${changes.length?'':'disabled'}>초안 변경 취소</button>
+    <span class="help" id="nochg" ${changes.length?'hidden':''}>게시본과 다른 내용이 없어 취소하거나 게시할 내용이 없습니다.</span>
+    <div class="btn-row"><button type="button" class="btn" data-act="save-draft">설정 초안 저장</button><button type="button" class="btn btn-primary" data-act="publish" aria-describedby="nochg" ${changes.length?'':'disabled'}>변경 검토·게시</button></div></div>`}`;
 }
 function tabQuestions(){
   const b=draft, sel=state.selq&&b.qs.find(q=>q.key===state.selq)?state.selq:b.qs[0].key, q=b.qs.find(x=>x.key===sel);
@@ -71,8 +71,8 @@ function tabQuestions(){
 }
 function tabWorkflow(){
   const b=draft;
-  const flow=b.order==='par'?['신청 등록','정보보안 + ICT인프라 동시 검토','사용자 보완·제출','최종 검토·처리']:['신청 등록','ICT인프라 통신 정보 입력','정보보안 검토','사용자 보완·제출','최종 검토·처리'];
-  if(b.head) flow.splice(flow.indexOf('사용자 보완·제출')+1,0,'부서장 확인');
+  const flow=b.order==='par'?['작성','정보보안 + ICT인프라 동시 검토','사용자 최종 검토','확정·관리']:['작성','ICT인프라 통신 정보 입력','정보보안 검토','사용자 최종 검토','확정·관리'];
+  if(b.head) flow.splice(flow.indexOf('사용자 최종 검토')+1,0,'부서장 확인');
   return `<div class="card" style="margin:0"><h2 class="h-panel" style="margin-bottom:.8rem">기관 검토 절차</h2>
     <p class="help" style="margin-top:0">현재 게시 절차: ${published.order==='par'?'동시':'순차'} 검토${published.head?', 부서장 확인':''}</p>
     <fieldset><legend class="legend">2단계 사전 협의 방식</legend><div class="choice-cards">
@@ -196,6 +196,11 @@ function tabVersions(){
     <thead><tr><th scope="col">버전</th><th scope="col">상태</th><th scope="col">게시 시각</th><th scope="col">질문 (신청자 / 담당자)</th><th scope="col">검토 절차</th><th scope="col">변경 요약</th><th scope="col">이 버전으로 만든 신청</th></tr></thead>
     <tbody>${ch.length?`<tr><td><b>v${published.version+1}</b></td><td><span class="badge b-warning">수정 초안</span></td><td>게시 전</td><td class="num">${draft.qs.filter(q=>q.on&&q.role==='user').length}개 / ${draft.qs.filter(q=>q.on&&q.role!=='user').length}개</td><td>${draft.order==='par'?'동시':'순차'} 검토${draft.head?', 부서장 확인':''}</td><td>변경 ${ch.length}건</td><td class="num">-</td></tr>`:''}${rows}</tbody></table></div></div>`;
 }
+/* 게시본과 다른 내용이 있을 때만 '초안 변경 취소'·'변경 검토·게시'를 켠다 */
+function syncActions(n){
+  $main.querySelectorAll('[data-act=discard],[data-act=publish]').forEach(b=>{b.disabled=!n;});
+  const h=document.getElementById('nochg'); if(h) h.hidden=!!n;
+}
 function settingsChange(t){
   const k=t.dataset.cfg, fid=t.id;
   if(t.dataset.qf){const q=draft.qs.find(x=>x.key===state.selq);const f=t.dataset.qf;
@@ -212,7 +217,7 @@ function settingsChange(t){
   if(['text','textarea','number','search'].includes(t.type)||t.tagName==='TEXTAREA'){
     const n=diffList().length, vb=$main.querySelector('.org-bar .verbar');
     if(vb) vb.lastElementChild.outerHTML=n?`<span class="badge b-warning">수정 초안 v${published.version+1}, 변경 ${n}건 (저장 전)</span>`:'<span class="badge b-neutral">게시본과 같음</span>';
-    const dc=$main.querySelector('[data-act=discard]'); if(dc){dc.disabled=!n;}
+    syncActions(n);
     return;
   }
   renderSettings();
@@ -263,4 +268,6 @@ ACT['publish']=(b,p,e)=>{ publishDraft(); return;
 ACT['form-pick']=(b,p,e)=>{ document.getElementById('form-file').click(); return;
 };
 $main.addEventListener('change',e=>{if(state.view==='settings'&&(e.target.dataset.cfg||e.target.dataset.qf)) settingsChange(e.target);});
+/* 글자를 입력하는 동안에도 버튼 상태를 바로 바꾼다 (change는 입력칸을 떠날 때만 일어남) */
+$main.addEventListener('input',e=>{const t=e.target; if(state.view==='settings'&&(t.dataset.cfg||t.dataset.qf)&&(['text','textarea','number','search'].includes(t.type)||t.tagName==='TEXTAREA')) settingsChange(t);});
 VIEWS.settings=renderSettings;

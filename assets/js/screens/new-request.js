@@ -314,9 +314,9 @@ function renderLanding(){
       <p class="help" style="margin:0">기획서, 구성도, 요구사항 정의서를 함께 올릴 수 있습니다.</p>
       <button type="button" class="btn" data-act="pick-file" aria-describedby="fhelp">파일 선택</button>
       <p class="help" id="fhelp" style="margin:0">PDF, HWPX, DOCX, XLSX, TXT 파일, 파일당 ${MAX_MB}MB, 최대 ${MAX_DOCS}개</p>
+      ${chat.fileErr?`<p class="ferr" role="alert" style="margin:0">${esc(chat.fileErr)}</p>`:''}
+      ${pendingList()}
     </div>
-    ${chat.fileErr?`<p class="ferr" role="alert" style="margin-top:1.2rem">${esc(chat.fileErr)}</p>`:''}
-    ${pendingList()}
     <div class="intake-actions">
       <button type="button" class="btn btn-tertiary" data-act="start-q">기획서 없이 대화로 시작</button>
       ${chat.pending.length?`<button type="button" class="btn btn-primary" data-act="analyze">선택한 파일 분석 시작 (${chat.pending.length})</button>`:''}
@@ -390,7 +390,7 @@ function renderQCard(focusInput){
       <p class="qhelp" style="margin:0">오른쪽 내용을 확인하고 기술정보 확인 요청을 보내 주세요. 문서를 더 추가할 수도 있습니다.</p>`;
   } else if(m==='requested'){
     el.innerHTML=`<p class="qnum">요청 완료</p><h3 class="qtitle" id="qt">기술정보 확인을 요청했어요</h3>
-      <p class="qhelp">담당자 사전 협의 단계로 넘어갔습니다.</p>
+      <p class="qhelp">담당자 협의 단계로 넘어갔습니다.</p>
       <div class="btn-row"><a class="btn btn-primary" href="request-detail.html?id=${chat.pid}">신청 상세 보기</a><button type="button" class="btn btn-tertiary" data-act="new-chat">다른 신청 시작</button></div>`;
   }
   if(focusInput){const t=document.getElementById('qtext')||el.querySelector('.qchip');if(t)t.focus({preventScroll:true});}
@@ -571,6 +571,8 @@ function doRequest(){
     purpose:info.purpose.v,audience:info.audience.v,pii:(info.data.v||'').startsWith('포함돼'),period:info.period.status==='unknown'?null:chat.period,
     unknown,notes:chat.notes.slice().concat(qs.filter(id=>!QDEFS[id]&&info[id].v).map(id=>`${QD(id).label}: ${info[id].v}`)).concat(hintNote),rules,due:'2026-11-10',updated:TODAY_STR,
     attachments:chat.docs.filter(d=>d.state==='done').map(d=>d.name)});
+  const infoSrc=x=>!x||!x.v?null:x.status==='doc'?{k:'ai',ev:`${x.src} “${x.quote||''}”`}:x.status==='confirmed'?{k:'ai',ok:'user',ev:`${x.src} “${x.quote||''}”`}:{k:'user'};
+  p.src=Object.fromEntries([['purpose','purpose'],['audience','audience'],['pii','data'],['period','period']].map(([k,id])=>[k,infoSrc(info[id])]).filter(([,v])=>v));
   p.history.push(H(nowStamp(),'김민지 (신청자)','인터뷰 완료, 기술정보 확인 요청'));
   chat.pid=p.id; delete p.chatSnap; chat.mode='requested'; chat.reqErr=[];
   renderFileBar(); renderQCard(); renderInfo();

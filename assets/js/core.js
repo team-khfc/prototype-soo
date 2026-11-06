@@ -58,7 +58,8 @@ const PAGES={dash:'requests.html',chat:'new-request.html',supp:'supplements.html
 const MENU_VIEWS=Object.keys(PAGES);
 const VIEWS={};   /* 각 화면 파일이 VIEWS.이름=렌더함수 로 등록합니다 */
 const ACT={};     /* 각 화면 파일이 ACT['동작']=(버튼,신청,이벤트)=>{} 로 등록합니다 */
-const STAGES=['사업 등록·인터뷰','담당자 사전 협의','사용자 보완·제출','최종 검토·처리'];
+/* 업무 4단계 이름 (FUNCTIONAL_SPEC 4단계 절차) */
+const STAGES=['작성','담당자 협의','사용자 최종 검토','확정·관리'];
 
 const QDEFS={
   purpose:{label:'사업 목적',title:'어떤 사업인가요?',help:'사업 목적을 한두 문장으로 적어 주세요. 신청서의 신청 사유로 들어갑니다.',type:'text',required:true},
@@ -113,6 +114,7 @@ let projects=[
    rules:[R('공공데이터 포털이 통계 API 호출','공공데이터 포털','203.0.113.0/24','통계 API 서버(DMZ)','10.20.5.31','443','인바운드'),R('API 서버가 통계 DB 조회','통계 API 서버(DMZ)','10.20.5.31','통계 DB','10.40.3.12','5432','내부')],
    history:[H('2026-10-29 10:12','정해원 (신청자)','인터뷰 완료, 기술정보 확인 요청'),H('2026-10-30 15:40','박준호 (ICT인프라)','통신 정보 입력'),H('2026-11-02 11:05','이서연 (정보보안)','협의 완료'),H('2026-11-04 09:30','정해원 (신청자)','제출본 1 제출')]},
   {id:'SF-2026-012',name:'주택연금 상담 챗봇',dept:'주택연금부',requester:'김민지',ver:2,cfg:{order:'seq',head:false},stage:1,infraDone:true,secDone:false,
+   src:{purpose:{k:'ai',ok:'user',ev:'사업계획서.docx 1쪽 “가입·지급 문의에 답하는 대국민 상담 챗봇”'},audience:{k:'ai',ok:'user',ev:'사업계획서.docx 2쪽 “국민이 홈페이지에서 이용”'},period:{k:'staff',by:'박준호'}},
    extra:{server_spec:'4vCPU, 16GB 메모리, Rocky Linux 9',net_zone:'DMZ 웹 구간에 챗봇 서버, 내부 DB 구간에 고객정보 DB. L4와 내부 방화벽 경유'},purpose:'주택연금 가입·지급 문의에 답하는 대국민 상담 챗봇',audience:'국민 (인터넷으로 접속)',pii:true,period:'2026-11-20 ~ 2027-11-19',unknown:[],due:'2026-11-09',updated:'2026-11-04',
    rules:[R('국민이 인터넷으로 챗봇에 접속','인터넷 이용자','Any','챗봇 웹서버(DMZ)','10.20.5.11','443','인바운드'),R('기관 내부 AI로 답변 생성','챗봇 웹서버(DMZ)','10.20.5.11','내부 LLM 서버','10.30.8.21','8000','내부'),R('가입 내역·지급액 조회','챗봇 웹서버(DMZ)','10.20.5.11','고객정보 DB','10.40.2.15','1521','내부'),R('유지보수 업체 원격 점검','SSL-VPN 사용자','172.16.90.0/24','챗봇 웹서버(DMZ)','10.20.5.11','22','인바운드(VPN 경유)')],
    history:[H('2026-11-02 14:20','김민지 (신청자)','인터뷰 완료, 기술정보 확인 요청'),H('2026-11-04 10:02','박준호 (ICT인프라)','통신 정보 입력')]},
@@ -157,14 +159,50 @@ function turns(p){
   if(p.stage===3) return ['sec'];
   return [];
 }
+/* 신청자는 본인이 신청한 건만 본다. 기관 관리자·정보보안·ICT인프라는 기관 전체를 본다. (운영에서는 서버가 최종 판단) */
+const canSee=p=>state.role!=='user'||p.requester===ROLES.user.person;
+const scoped=()=>projects.filter(canSee);
 const myTurn=p=>turns(p).includes(state.role);
 const staffTurn=p=>turns(p).some(r=>r==='infra'||r==='sec');
+/* ---------- 값의 출처: 사용자 답변 / AI 추론(+근거) / 담당자 입력 / 담당자 확인 ----------
+   p.src[키]에 기록된 값이 있으면 그대로 쓰고, 없으면 아래 기준으로 판단한다.
+   키: purpose·audience·pii·period, 기관 추가 질문 'x.저장키', 방화벽 규칙 칸 'r번호.칸' */
+const RULE_ADDR=['fromIp','toIp','port'];
+function srcOf(p,key){
+  const s=(p.src||{})[key]; let o=s?{...s}:null;
+  if(!o){
+    if(key.startsWith('x.')){
+      const k=key.slice(2), q=cfgOf(p).qs.find(x=>x.key===k); if(!(p.extra||{})[k]) return null;
+      o=q&&q.role!=='user'?{k:'staff',by:ROLES[q.role].person}:{k:'user'};
+    } else if(/^r\d+\./.test(key)){
+      const [ri,k]=key.slice(1).split('.'), r=p.rules[+ri]; if(!r||r[k]==null) return null;
+      o=RULE_ADDR.includes(k)&&r[k]!=='Any'&&p.infraDone?{k:'staff',by:ROLES.infra.person}:{k:'ai',ev:'신청자 답변을 방화벽 규칙으로 변환'};
+    } else o={k:'user'};
+  }
+  if(o.k==='ai'&&o.ok!=='staff'&&(p.secDone||p.stage>=2)){o.ok='staff';o.okBy=ROLES.sec.person;}
+  return o;
+}
+function srcTag(o){
+  if(!o) return '';
+  const who=o.ok==='staff'?o.okBy:o.k==='staff'?o.by:null, by=who?`(${esc(who)})`:'';
+  const [cls,lbl]=o.k==='ai'?(o.ok==='staff'?['b-success',`AI 추론 · 확인${by}`]:o.ok==='user'?['b-info','AI 추론 · 사용자 확인']:['src-ai','AI 추론'])
+    :o.k==='staff'?['b-info',`직접 입력${by}`]:['b-neutral','사용자 답변'];
+  return `<span class="badge src ${cls}"><span class="sr-only">출처: </span>${lbl}</span>`;
+}
+/* 출처 꼬리표가 붙는 값 중 아직 사람이 확인하지 않은 AI 추론 개수 */
+function aiPending(p){
+  const keys=['purpose','audience','pii','period',...Object.keys(p.extra||{}).map(k=>'x.'+k),
+    ...p.rules.flatMap((r,i)=>['biz',...RULE_ADDR].map(k=>`r${i}.${k}`))];
+  return keys.filter(k=>{const o=srcOf(p,k);return o&&o.k==='ai'&&!o.ok;}).length;
+}
+const srcEv=o=>o&&o.k==='ai'&&o.ev?`<span class="src-ev">근거: ${esc(o.ev)}</span>`:'';
 function statusOf(p){
   if(p.stage===4) return p.result==='reject'?['처리 불가','b-danger']:['처리 완료','b-success'];
   if(p.stage===0) return ['작성 중','b-neutral'];
-  if(p.stage===1) return waitingUser(p)?['보완 중','b-warning']:(p.returnedInfra?['보완 요청','b-warning']:['사전 협의 중','b-info']);
-  if(p.stage===2) return ['보완·확인 필요','b-warning'];
-  return ['최종 검토 중','b-info'];
+  /* 담당자 사이의 되돌림(정보보안→ICT인프라)은 신청 전체로는 '사전 협의 중'. 분야별 '보완 요청'은 상세 화면 협의 현황에 표시 */
+  if(p.stage===1) return waitingUser(p)?['보완 요청','b-warning']:['사전 협의 중','b-info'];
+  if(p.stage===2) return ['제출 준비','b-info'];
+  return ['제출됨','b-info'];
 }
 function nextTodo(p){
   if(p.stage===0) return '인터뷰 답변 이어서 작성';
@@ -186,7 +224,7 @@ function renderShell(){
   document.getElementById('u-dept').textContent=r.dept;
   document.getElementById('btn-user').setAttribute('aria-label',`사용자 ${r.person}, ${r.dept}, ${r.name}. 다른 사용자 선택`);
   const cur=['detail','submitted'].includes(state.view)?'dash':state.view;
-  const badge={dash:projects.filter(myTurn).length,supp:projects.filter(p=>waitingUser(p)).reduce((n,p)=>n+openSupps(p).length,0),net:projects.filter(p=>p.stage>=1&&p.stage<=3&&missingCount(p)).length};
+  const badge={dash:scoped().filter(myTurn).length,supp:scoped().filter(p=>waitingUser(p)).reduce((n,p)=>n+openSupps(p).length,0),net:projects.filter(p=>p.stage>=1&&p.stage<=3&&missingCount(p)).length};
   const col=document.body.classList.contains('side-collapsed');
   document.getElementById('menu').innerHTML=MENU[state.role].map(([v,l])=>{const b=badge[v];return `<li><a href="${PAGES[v]}" ${v===cur?'aria-current="page"':''} ${col?`title="${l}${b?` (${b}건)`:''}"`:''}>${NAVI[v]||''}<span class="nl">${l}</span>${b?`<b class="nbadge" aria-label="${b}건">${b}</b>`:''}</a></li>`;}).join('');
   const titles={home:'업무 한눈에 보기',dash:MENU[state.role][0][1],chat:'새 신청',supp:'보완 요청',docs:'문서함',net:'통신 정보',hist:state.role==='sec'?'검토 이력':'처리 이력',policy:'정책 수명주기',settings:'기관 설정',detail:'신청 상세',submitted:'제출 완료'};
@@ -207,6 +245,7 @@ function route(focus){
   const v=document.body.dataset.view, id=new URLSearchParams(location.search).get('id');
   if(MENU_VIEWS.includes(v)&&!MENU[state.role].some(m=>m[0]===v)){ persist(); location.replace(PAGES.dash); return; }
   if((v==='detail'||v==='submitted')&&!projects.find(p=>p.id===id)){ persist(); location.replace(PAGES.dash); return; }
+  if((v==='detail'||v==='submitted')&&!canSee(projects.find(p=>p.id===id))){ persist(); location.replace(PAGES.dash); return; }
   if(!state.keepFlash&&(v!==state.view||id!==state.id)) state.flash=null;
   state.keepFlash=false;
   state.view=v; state.id=id;
@@ -253,7 +292,7 @@ function dueLeft(p){ const d=dueOf(p); return d==null?null:Math.round((new Date(
 function dueCell(p){
   const d=dueOf(p); if(!d) return '<span class="help">-</span>';
   const n=dueLeft(p);
-  const tag=n<0?`<span class="badge b-danger">기한 지남 ${-n}일</span>`:n===0?'<span class="badge b-warning">오늘까지</span>':n<=2?`<span class="badge b-warning">D-${n}</span>`:`<span class="badge b-neutral">D-${n}</span>`;
+  const tag=n<0?`<span class="badge b-danger">D+${-n}<span class="sr-only">, 기한 ${-n}일 지남</span></span>`:n===0?'<span class="badge b-warning">D-0<span class="sr-only">, 오늘까지</span></span>':n<=2?`<span class="badge b-warning">D-${n}</span>`:`<span class="badge b-neutral">D-${n}</span>`;
   return `${tag}<div class="p-meta${n<0?' over':''}">${dot(d)}</div>`;
 }
 
@@ -318,7 +357,7 @@ const notiBtn=document.getElementById('btn-noti'), notiPanel=document.getElement
 function notiItems(){
   const r=state.role;
   return projects.flatMap(p=>p.history.map(h=>({p,h,key:p.id+'|'+h.at+'|'+h.what}))).filter(({p,h})=>{
-    if(r==='user') return p.requester==='김민지'&&!h.who.includes('(신청자)');
+    if(r==='user') return canSee(p)&&!h.who.includes('(신청자)');
     if(r==='infra') return !h.who.includes('(ICT인프라)');
     if(r==='sec') return !h.who.includes('(정보보안)');
     return true;}).sort((a,b)=>a.h.at<b.h.at?1:-1).slice(0,8);
@@ -363,7 +402,7 @@ const gq=document.getElementById('gq'), glist=document.getElementById('gq-list')
 function gResults(t){
   t=t.trim().toLowerCase();
   const screens=MENU[state.role].map(([v,l])=>({type:'화면',label:l,sub:'메뉴',href:PAGES[v]})).filter(x=>!t||x.label.toLowerCase().includes(t));
-  const reqs=projects.filter(p=>t&&(p.name+p.id+p.dept+p.requester).toLowerCase().includes(t)).slice(0,6).map(p=>({type:'신청',label:p.name,sub:`${p.id}, ${p.dept}, ${statusOf(p)[0]}`,href:'request-detail.html?id='+p.id}));
+  const reqs=scoped().filter(p=>t&&(p.name+p.id+p.dept+p.requester).toLowerCase().includes(t)).slice(0,6).map(p=>({type:'신청',label:p.name,sub:`${p.id}, ${p.dept}, ${statusOf(p)[0]}`,href:'request-detail.html?id='+p.id}));
   return [...reqs,...screens];
 }
 function renderG(){

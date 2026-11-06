@@ -33,3 +33,18 @@
 @media (max-width:1023px){
   .tasks{grid-template-columns:1fr}
 }
+.turn{display:block;margin-top:.6rem;font-size:1.5rem;color:var(--sf-muted)}
+.turn.me{color:var(--sf-primary-text);font-weight:700}
+.tbl.rows-link .turn{margin-top:.4rem}
+/* 신청자 화면 담당자 열 */
+.asg{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+.asg li{display:grid;grid-template-columns:6.4rem auto 1fr;align-items:center;gap:.8rem;font-size:1.5rem}
+.asg-f{color:var(--sf-muted);font-size:1.3rem}
+.asg-s{display:inline-flex;align-items:center;gap:.4rem;font-size:1.3rem;white-space:nowrap}
+.asg-s::before{content:"";width:.7rem;height:.7rem;border-radius:50%;background:currentColor;flex:none}
+.asg-s.s-done{color:var(--sf-success-text)}
+.asg-s.s-now{color:var(--sf-primary-text)}
+.asg-s.s-warn{color:var(--sf-warning-text)}
+.asg-s.s-wait{color:var(--sf-muted)}
+.asg-s.s-wait::before{background:none;border:1px solid currentColor}
+.asg-none{color:var(--sf-muted);font-size:1.5rem}

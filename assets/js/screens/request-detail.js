@@ -16,21 +16,30 @@ function lint(p){
   if(!out.some(o=>o[0]==='danger')) out.unshift(['success','기관 기준 자동 점검에서 걸린 규칙은 없습니다. 자동 점검은 보안 적합 판정이 아닙니다.']);
   return out;
 }
-function cellVal(r,k,edit,i){
+function cellVal(r,k,edit,i,p){
   const v=r[k];
   if(v===null){
     if(edit){const id=`f-${i}-${k}`;const lbl=`${i+1}번 규칙 ${k==='port'?r.to+' 포트':(k==='fromIp'?r.from:r.to)+' 주소'}`;
       return `<label for="${id}" class="sr-only">${esc(lbl)}</label><input id="${id}" class="input input-sm" data-ri="${i}" data-k="${k}" inputmode="${k==='port'?'numeric':'text'}" aria-describedby="${id}-e"><p class="ferr" id="${id}-e" hidden></p>`;}
     return '<span class="badge b-warning">담당자 확인 필요</span>';
   }
+  if(p&&(RULE_ADDR.includes(k)||k==='biz')) return `${esc(v)}${srcTag(srcOf(p,`r${i}.${k}`))}`;
   return esc(v);
 }
+/* 기관 추가 질문이 비어 있을 때: 담당 분야 협의가 끝났으면 선택 항목은 '입력 안 함(선택)', 아직이면 '입력 전' */
+function emptyExtra(p,q){
+  const done=p.stage>=2||(q.role==='infra'?p.infraDone:q.role==='sec'?p.secDone:false);
+  if(!done) return `<span class="badge b-neutral">${FIELD[q.role]} 입력 전</span>`;
+  return q.required?'<span class="badge b-warning">담당자 확인 필요</span>':'<span class="help">입력 안 함(선택)</span>';
+}
+/* 값 + 출처 꼬리표 + (AI 추론이면) 근거 */
+const srcVal=(p,key,html)=>{const o=srcOf(p,key);return `<span class="src-v">${html}</span>${srcTag(o)}${srcEv(o)}`;};
 function rulesTable(p,edit){
   const cols=published.formMap;
   if(!p.rules.length) return '<p class="help">아직 만들어진 규칙이 없습니다. 인터뷰를 마치면 AI가 규칙 초안을 제안합니다.</p>';
   return `<div class="tbl-wrap"><table class="tbl inner-tbl"><caption class="sr-only">방화벽 규칙. 열 이름은 기관 양식(${esc(published.formFile)}) 기준</caption>
     <thead><tr><th scope="col">번호</th>${cols.map(c=>`<th scope="col">${esc(c.label)}</th>`).join('')}</tr></thead>
-    <tbody>${p.rules.map((r,i)=>`<tr><td>${i+1}</td>${cols.map(c=>`<td>${cellVal(r,c.k,edit,i)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    <tbody>${p.rules.map((r,i)=>`<tr><td>${i+1}</td>${cols.map(c=>`<td${c.k==='dir'?' class="nowrap"':''}>${cellVal(r,c.k,edit,i,p)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function renderDetail(){
   const p=projects.find(x=>x.id===state.id);
@@ -47,18 +56,19 @@ function renderDetail(){
   ${flashHTML()}
   <div class="detail"><div>
     <section class="card" aria-labelledby="d-info"><h2 class="h-panel" id="d-info">사업 정보</h2>
-      <dl class="dl"><dt>사업 목적</dt><dd>${esc(p.purpose||'미입력')}</dd>
-      <dt>이용 대상</dt><dd>${p.audience?esc(p.audience):'<span class="badge b-warning">답변 필요</span>'}</dd>
-      <dt>개인정보</dt><dd>${p.pii?'<span class="badge b-info">포함, 정보보안 검토 필요</span>':'포함되지 않음'}</dd>
-      <dt>운영 기간</dt><dd>${p.period?esc(p.period):'<span class="badge b-warning">담당자 확인 필요</span>'}</dd>
-      ${cfgOf(p).qs.filter(q=>q.on&&q.role!=='user').map(q=>`<dt>${esc(q.label)}</dt><dd>${(p.extra||{})[q.key]?esc(p.extra[q.key]):`<span class="badge b-neutral">${FIELD[q.role]} 입력 전</span>`}</dd>`).join('')}
+      <p class="help src-help">값 옆 꼬리표는 출처입니다: 사용자 답변, AI 추론(근거 포함), 직접 입력(입력한 담당자), 확인(확인한 담당자). AI 추론은 사람이 확인하기 전까지 확정값이 아닙니다.</p>
+      <dl class="dl"><dt>사업 목적</dt><dd>${p.purpose?srcVal(p,'purpose',esc(p.purpose)):'미입력'}</dd>
+      <dt>이용 대상</dt><dd>${p.audience?srcVal(p,'audience',esc(p.audience)):'<span class="badge b-warning">답변 필요</span>'}</dd>
+      <dt>개인정보</dt><dd>${srcVal(p,'pii',p.pii?'<span class="badge b-info">포함, 정보보안 검토 필요</span>':'포함되지 않음')}</dd>
+      <dt>운영 기간</dt><dd>${p.period?srcVal(p,'period',esc(p.period)):'<span class="badge b-warning">담당자 확인 필요</span>'}</dd>
+      ${cfgOf(p).qs.filter(q=>q.on&&q.role!=='user').map(q=>`<dt>${esc(q.label)}</dt><dd>${(p.extra||{})[q.key]?srcVal(p,'x.'+q.key,esc(p.extra[q.key])):emptyExtra(p,q)}</dd>`).join('')}
       ${dueOf(p)?`<dt>처리 기한</dt><dd>${dueCell(p)}<span class="help">접수 ${dot(acceptDate(p))}부터 영업일 ${cfgOf(p).slaDays||published.slaDays||5}일</span></dd>`:''}
       ${p.attachments&&p.attachments.length?`<dt>첨부 문서</dt><dd>${p.attachments.map(esc).join(', ')}</dd>`:''}
       <dt>적용 설정</dt><dd>v${p.ver} (${p.cfg.order==='par'?'동시':'순차'} 검토${p.cfg.head?', 부서장 확인':''})</dd>
       ${p.notes&&p.notes.length?`<dt>추가 설명</dt><dd>${p.notes.map(n=>esc(n)).join('<br>')}</dd>`:''}
       ${p.reply?`<dt>보완 답변</dt><dd>${esc(p.reply)}</dd>`:''}</dl></section>
     ${(p.supps||[]).length?`<section class="card" aria-labelledby="d-supp"><div class="card-h"><h2 class="h-panel" id="d-supp">보완 요청과 답변</h2>${openSupps(p).length?`<span class="badge b-warning">미해결 ${openSupps(p).length}건</span>`:'<span class="badge b-success">모두 답변됨</span>'}</div>
-      <ul class="thread">${p.supps.map(sp=>`<li><div class="supp-h"><b>${esc(sp.item)}</b>${sp.reply?'<span class="badge b-success">답변 완료</span>':'<span class="badge b-warning">답변 필요</span>'}</div><p style="margin:.4rem 0">${esc(sp.text)}</p><p class="meta" style="margin:0">요청: ${esc(sp.from)} ${esc(sp.at)}, 작성: 신청자</p>${sp.reply?`<div class="reply"><p style="margin:0">${esc(sp.reply)}</p><p class="meta" style="margin:.2rem 0 0">신청자 답변 ${esc(sp.replyAt||'')}</p></div>`:''}</li>`).join('')}</ul></section>`:''}
+      <ul class="thread">${p.supps.map(sp=>`<li><div class="supp-h"><b>${esc(sp.item)}</b>${sp.reply?'<span class="badge b-success">답변 완료</span>':'<span class="badge b-warning">답변 필요</span>'}</div><p style="margin:.4rem 0">${esc(sp.text)}</p><p class="meta" style="margin:0">요청: ${esc(sp.from)} ${esc(sp.at)}, 작성: 신청자</p>${!sp.reply&&state.role==='user'&&waitingUser(p)?`<a class="link-more" href="#sr-${p.id}-${sp.id}" data-act="goto-reply">${I.chev}<span>답변 칸으로 이동</span></a>`:''}${sp.reply?`<div class="reply"><p style="margin:0">${esc(sp.reply)}</p><p class="meta" style="margin:.2rem 0 0">신청자 답변 ${esc(sp.replyAt||'')}</p></div>`:''}</li>`).join('')}</ul></section>`:''}
     <section class="card" aria-labelledby="d-docs"><h2 class="h-panel" id="d-docs">문서</h2>${docCard(p,true)}</section>
     ${p.rules.length?`<section class="card" aria-labelledby="d-flow"><div class="card-h"><h2 class="h-panel" id="d-flow">데이터 흐름도</h2></div>${flowSVG(p.rules,{w:720,id:'d',ip:true})}</section>`:''}
     <section class="card" aria-labelledby="d-rules"><h2 class="h-panel" id="d-rules">방화벽 규칙</h2>
@@ -77,9 +87,11 @@ function consultStatus(p){
     if(p.stage>=2||done) return '<span class="badge b-success">협의 완료</span>';
     if(p.stage===0) return '<span class="badge b-neutral">대기</span>';
     if(waitingUser(p)&&openSupps(p).some(s=>s.from===FIELD[r])) return '<span class="badge b-warning">보완 대기</span>';
-    if(p.cfg.order==='seq'&&r==='sec'&&!p.infraDone) return '<span class="badge b-neutral">순서 대기</span>';
+    if(r==='infra'&&p.returnedInfra) return '<span class="badge b-warning">보완 요청</span>';
+    if(p.cfg.order==='seq'&&r==='sec'&&!p.infraDone) return '<span class="badge b-neutral">검토 대기</span>';
     return '<span class="badge b-info">검토 중</span>';};
-  return `<div class="consult"><div><span>정보보안</span>${st('sec')}</div><div><span>ICT인프라</span>${st('infra')}</div></div>`;
+  /* 처리 순서(ICT인프라 → 정보보안)대로 표시 */
+  return `<div class="consult"><div><span>ICT인프라</span>${st('infra')}</div><div><span>정보보안</span>${st('sec')}</div></div>`;
 }
 function reviewPanel(p,mine){
   const role=state.role;
@@ -93,7 +105,7 @@ function reviewPanel(p,mine){
   if(waitingUser(p)&&role==='user'){
     return `<h2 class="h-panel" id="rv-h">보완 답변</h2>
     
-    ${openSupps(p).map(sp=>suppForm(p,sp,true)).join('')}`;
+    ${openSupps(p).map(sp=>suppForm(p,sp,openSupps(p).length===1)).join('')}`;
   }
   if(p.stage===1&&(role==='infra'||role==='sec')){
     const isInfra=role==='infra', d=(p.drafts||{})[role]||{};
@@ -168,7 +180,7 @@ function staffDone(p){
       const r=p.rules[+inp.dataset.ri], k=inp.dataset.k, v=inp.value.trim(), lbl=`${+inp.dataset.ri+1}번 규칙`;
       const ok=k==='port'?(/^\d+$/.test(v)&&+v>=1&&+v<=65535):(validIp(v)||(r.dir==='아웃바운드'&&k==='toIp'&&HOSTRE.test(v)));
       if(!ok) errs.push({id:inp.id,msg:k==='port'?`${lbl} ${r.to} 포트를 1~65535 사이 숫자로 입력해 주세요.`:`${lbl} ${k==='fromIp'?r.from:r.to} 주소를 IPv4 주소나 대역으로 입력해 주세요. 예: 10.20.5.11`});
-      vals.push([r,k,v]);
+      vals.push([r,k,v,+inp.dataset.ri]);
     });
     if(!p.period){
       const sv=d.ps.trim(), ev=d.pe.trim();
@@ -185,9 +197,13 @@ function staffDone(p){
   cfgOf(p).qs.filter(q=>q.on&&q.role===role&&q.required).forEach(q=>{ if(!(d.xq[q.key]||'').trim()) errs.push({id:'xq-'+q.key,msg:`${q.label}을(를) 입력해 주세요.`}); });
   const un=d.chk.filter(x=>!x).length; if(un) errs.push({id:null,msg:`검토 체크리스트 ${un}개를 아직 확인하지 않았습니다.`});
   if(errs.length){showErrors(errs);return;}
-  vals.forEach(([r,k,v])=>{r[k]=v;});
-  if(range){p.period=range;p.unknown=(p.unknown||[]).filter(x=>x!=='운영 기간');}
-  p.extra=Object.assign(p.extra||{},Object.fromEntries(Object.entries(d.xq).filter(([,v])=>v.trim())));
+  const by={k:'staff',by:ROLES[role].person,at:nowStamp()}; p.src=p.src||{};
+  vals.forEach(([r,k,v,i])=>{r[k]=v;p.src[`r${i}.${k}`]={...by};});
+  /* ICT인프라가 협의를 마치면, 직접 입력하지 않은 기존 주소·포트(AI 제안)는 ICT인프라가 확인한 값으로 기록 */
+  if(role==='infra') p.rules.forEach((r,i)=>RULE_ADDR.forEach(k=>{const key=`r${i}.${k}`; if(r[k]!=null&&r[k]!=='Any'&&!p.src[key]) p.src[key]={k:'ai',ok:'staff',okBy:ROLES.infra.person,ev:'규칙 초안의 기본값'};}));
+  if(range){p.period=range;p.unknown=(p.unknown||[]).filter(x=>x!=='운영 기간');p.src.period={...by};}
+  const xs=Object.entries(d.xq).filter(([,v])=>v.trim());
+  p.extra=Object.assign(p.extra||{},Object.fromEntries(xs)); xs.forEach(([k])=>{p.src['x.'+k]={...by};});
   if(role==='infra'){p.infraDone=true;p.returnedInfra=null;} else {p.secDone=true;p.secNote=d.op;}
   delete p.drafts[role];
   p.history.push(H(nowStamp(),ROLE_TAG[role],(role==='infra'?'통신 정보 입력, ':'')+'사전 협의 완료'+(d.op?` (의견: ${d.op})`:'')));
@@ -266,3 +282,7 @@ ACT['submit']=(b,p,e)=>{ submitFinal(p); return;
 ACT['record']=(b,p,e)=>{ recordResult(p); return;
 };
 VIEWS.detail=renderDetail;
+
+/* 본문 보완 요청 카드의 '답변 칸으로 이동': 오른쪽(좁은 화면에서는 아래) 답변 칸으로 이동해 바로 입력 */
+ACT['goto-reply']=(b,p,e)=>{ e.preventDefault(); const t=document.getElementById(b.getAttribute('href').slice(1)); if(!t) return;
+  t.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}); t.focus({preventScroll:true}); };

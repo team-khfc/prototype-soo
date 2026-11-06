@@ -15,7 +15,7 @@ function renderPolicy(){
   ${flashHTML()}
   <section aria-labelledby="ps-h"><h2 id="ps-h" class="sr-only">요약</h2><div class="stats">
     ${[['관리 중인 정책',live.length,'회수 완료 제외',I.doc],[`${published.warnDays}일 안에 만료`,soon,'연장 여부 확인 필요',I.clock],['만료 후 남은 정책',exp,'회수 처리 필요',I.warn],[`${published.idleDays}일 넘게 미사용`,idle,'회수 후보',I.users]]
-      .map(([l,n,d,ic],i)=>`<button type="button" class="stat" data-act="pf" data-k="${i?'attention':'all'}" aria-pressed="false"><span class="stat-top"><span>${l}</span>${ic}</span><span class="stat-num">${n}<small>건</small></span></button>`).join('')}
+      .map(([l,n,d,ic],i)=>`<button type="button" class="stat" data-act="pf" data-k="${i?'attention':'all'}" aria-pressed="false"><span class="stat-l">${ic}<span>${l}</span></span><span class="stat-num">${n}<small>건</small></span></button>`).join('')}
   </div></section>
   <div class="sec-head"><h2 class="h-sec" id="pl-h">정책 목록</h2></div>
   <div class="toolbar"><div class="pills" role="group" aria-label="정책 거르기">${pills.map(([k,l])=>`<button type="button" class="pill" data-act="pf" data-k="${k}" aria-pressed="${state.pfilter===k}">${l}</button>`).join('')}</div></div>
@@ -23,7 +23,7 @@ function renderPolicy(){
   ${list.length?`<div class="tbl-wrap"><table class="tbl"><caption class="sr-only">방화벽 정책 목록</caption>
     <thead><tr><th scope="col">정책</th><th scope="col">신청자</th><th scope="col">출발지</th><th scope="col">목적지</th><th scope="col">포트</th><th scope="col">만료일</th><th scope="col">최근 30일 트래픽</th><th scope="col">상태</th><th scope="col">처리</th></tr></thead>
     <tbody>${list.map(r=>`<tr><td><div class="p-id">${r.id}</div><div class="p-name">${esc(r.name)}</div>${r.fresh?'<span class="badge b-info">새로 등록</span>':''}</td>
-      <td>${esc(r.owner)}</td><td>${esc(r.from)}</td><td>${esc(r.to)}</td><td>${esc(r.port)}</td><td>${dot(r.exp)}</td>
+      <td class="nowrap">${esc(r.owner)}</td><td>${esc(r.from)}</td><td>${esc(r.to)}</td><td>${esc(r.port)}</td><td>${dot(r.exp)}</td>
       <td class="num">${r.hits?`${r.hits.toLocaleString('ko-KR')}건`:'<span class="help">없음</span>'}<div class="meta">마지막 ${dot(r.last)}</div></td>
       <td>${r.retired?'<span class="badge b-neutral">회수 완료</span>':r.s.tags.map(([c,t])=>`<span class="badge ${c}">${t}</span>`).join(' ')}</td>
       <td>${policyAction(r)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-box">이 조건에 해당하는 정책이 없습니다.</div>'}`;

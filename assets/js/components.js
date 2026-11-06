@@ -1,11 +1,15 @@
 /* 보안길잡이 AI | 여러 화면이 함께 쓰는 부품: 문서 카드·미리보기, 보완 요청 카드, 데이터 흐름도, 작성 중 삭제. */
 'use strict';
-function suppForm(p,sp,inDetail){
+function docCheckState(m,ai){
+  const parts=[m&&`미확정 ${m}개`,ai&&`AI 추론 미확인 ${ai}개`].filter(Boolean);
+  return parts.length?`<span class="need-txt">${parts.join(', ')}</span>`:'모든 값 확인됨';
+}
+function suppForm(p,sp,primary){
   const fid=`sr-${p.id}-${sp.id}`;
   return `<div class="supp"><div class="supp-h"><b>${esc(sp.item)}</b><span class="badge b-warning">답변 필요</span></div>
     <p style="margin:.4rem 0">${esc(sp.text)}</p><p class="meta" style="margin:0 0 1.2rem">요청: ${esc(sp.from)} ${esc(sp.at)}, 작성: 신청자</p>
     <div class="field"><label for="${fid}">보완 답변<span class="req">필수</span></label><textarea id="${fid}" class="input" aria-describedby="${fid}-e"></textarea><p class="ferr" id="${fid}-e" hidden></p></div>
-    <button type="button" class="btn ${inDetail&&openSupps(p).length===1?'btn-primary':''}" data-act="supp-reply" data-id="${p.id}" data-sid="${sp.id}">보완 답변 등록</button></div>`;
+    <button type="button" class="btn ${primary?'btn-primary':''}" data-act="supp-reply" data-id="${p.id}" data-sid="${sp.id}">보완 답변 등록</button></div>`;
 }
 function suppReply(p,sid){
   const sp=p.supps.find(x=>x.id===+sid), fid=`sr-${p.id}-${sp.id}`, el=document.getElementById(fid), v=el.value.trim();
@@ -66,7 +70,7 @@ function docCard(p,inDetail){
   const t=genDoc(p), m=missingCount(p);
   return `<div class="doc ${inDetail?'in':''}"><div class="doc-h"><span class="badge ${k.final?'b-info':'b-neutral'}">${k.label}</span>${inDetail?'':`<span class="p-id">${p.id}</span>`}</div>
     <h3 class="doc-t">${inDetail?'방화벽 정책 신청서':esc(p.name)}</h3>
-    <dl class="doc-dl"><div><dt>적용 설정</dt><dd>v${p.ver}</dd></div><div><dt>확인 상태</dt><dd>${m?`미확정 ${m}개`:'모든 값 확인됨'}</dd></div><div><dt>문서 형식</dt><dd>TXT, ${sizeLbl(bytes(t))}</dd></div></dl>
+    <dl class="doc-dl"><div><dt>적용 설정</dt><dd>v${p.ver}</dd></div><div><dt>확인 상태</dt><dd>${docCheckState(m,aiPending(p))}</dd></div><div><dt>문서 형식</dt><dd>TXT, ${sizeLbl(bytes(t))}</dd></div></dl>
     ${k.final?`<p class="help" style="margin:0 0 1.2rem">${esc(p.submittedAt||'')} 제출, 읽기 전용</p>`:''}
     <div class="btn-row"><button type="button" class="btn btn-sm" data-act="doc-preview" data-id="${p.id}">문서 미리보기</button>
       ${dlNS?`<button type="button" class="btn btn-sm btn-tertiary" data-act="doc-dl" data-id="${p.id}">TXT 다운로드 (${sizeLbl(bytes(t))})</button>`:''}
@@ -84,16 +88,18 @@ function zoneOf(n){ if(/DMZ/.test(n)) return 1; if(/인터넷|외부|포털|중�
 function splitName(n){ const m=n.match(/^(.*?)(\(.*\))$/); if(m) return [m[1],m[2]]; if(n.length<=7) return [n]; const sp=n.lastIndexOf(' ',Math.ceil(n.length/2)+1); return sp>0?[n.slice(0,sp),n.slice(sp+1)]:[n]; }
 function flowSVG(rules,o){
   if(!rules.length) return '';
-  const W=o.w, colW=W/3, pad=10, bw=colW-pad*2-8, bh=o.ip?54:42, top=34, gapY=o.ip?72:60, fs=o.w>400?13:11;
+  const colW=o.w/3, pad=10, bw=colW-pad*2-8, bh=o.ip?54:42, top=34, gapY=o.ip?72:60, fs=o.w>400?13:11;
   const nodes=[], byName={};
   const add=(name,ip)=>{ if(!byName[name]){const z=zoneOf(name);const row=nodes.filter(n=>n.z===z).length;byName[name]={name,z,row,ip:null};nodes.push(byName[name]);} if(ip&&!byName[name].ip) byName[name].ip=ip; return byName[name]; };
   rules.forEach(r=>{add(r.from,r.fromIp);add(r.to,r.toIp);});
-  nodes.forEach(n=>{n.x=n.z*colW+pad;n.y=top+n.row*gapY;n.cy=n.y+bh/2;});
-  const rows=Math.max(...[0,1,2].map(z=>nodes.filter(n=>n.z===z).length),1);
+  /* 노드가 없는 구역(외부·DMZ·내부망)은 그리지 않고, 남은 구역만 왼쪽부터 순서대로 배치 */
+  const used=[0,1,2].filter(z=>nodes.some(n=>n.z===z)), W=colW*used.length;
+  nodes.forEach(n=>{n.c=used.indexOf(n.z);n.x=n.c*colW+pad;n.y=top+n.row*gapY;n.cy=n.y+bh/2;});
+  const rows=Math.max(...used.map(z=>nodes.filter(n=>n.z===z).length),1);
   const H=top+rows*gapY-(gapY-bh)+12;
   const zf=['var(--sf-background)','var(--sf-warning-soft)','var(--sf-primary-soft)'];
   let g='';
-  ZONES.forEach((z,i)=>{g+=`<rect x="${i*colW+2}" y="2" width="${colW-4}" height="${H-4}" rx="8" fill="${zf[i]}"/><text x="${i*colW+colW/2}" y="22" text-anchor="middle" font-size="${fs}" font-weight="700" fill="var(--sf-muted)">${z}</text>`;});
+  used.forEach((i,c)=>{const z=ZONES[i];g+=`<rect x="${c*colW+2}" y="2" width="${colW-4}" height="${H-4}" rx="8" fill="${zf[i]}"/><text x="${c*colW+colW/2}" y="22" text-anchor="middle" font-size="${fs}" font-weight="700" fill="var(--sf-muted)">${z}</text>`;});
   let e='', badges='', same=0;
   const sideOf=(n,other)=>n.z===other.z?'R':(n.z<other.z?'R':'L');
   const ports={}, ends=rules.map((r,i)=>{const a=byName[r.from],b=byName[r.to];const ka=r.from+'|'+sideOf(a,b), kb=r.to+'|'+sideOf(b,a);(ports[ka]=ports[ka]||[]).push(i+'a');(ports[kb]=ports[kb]||[]).push(i+'b');return [ka,kb];});

@@ -13,19 +13,24 @@ function inStat(p,k){
   return true;
 }
 function renderDash(){
-  const mine=projects.filter(myTurn), staff=projects.filter(staffTurn), done=projects.filter(p=>p.stage===4);
+  const all=scoped(), mine=all.filter(myTurn), staff=all.filter(staffTurn), done=all.filter(p=>p.stage===4);
   const statDefs=[
     ['mine','내가 할 일',I.pencil,mine.length,state.role==='user'?'보완·확인 진행 중':'내 차례인 협의·검토'],
     ['staff','담당자 확인 중',I.users,staff.length,'담당자 작업 필요'],
     ['done','처리 완료',I.check,done.length,'검토·처리 기록 완료'],
-    ['all','전체 신청',I.doc,projects.length,'현재 선택한 기관 기준']];
+    ['all',state.role==='user'?'내 신청 전체':'전체 신청',I.doc,all.length,state.role==='user'?'본인이 신청한 건':'현재 선택한 기관 기준']];
   const pillDefs=[['all','전체'],['mine','내가 할 일'],['staff','담당자 확인 중'],['done','완료']];
   const q=state.q.trim().toLowerCase();
-  let list=projects.filter(p=>inStat(p,state.filter));
+  let list=all.filter(p=>inStat(p,state.filter));
   if(state.role==='infra'||state.role==='sec') list=list.slice().sort((a,b)=>{const x=dueOf(a),y=dueOf(b); if(x===y) return 0; if(!x) return 1; if(!y) return -1; return x<y?-1:1;});
   const per=state.per||'all', pr=periodRange();
   if(pr) list=list.filter(p=>{const d=regDate(p);return d>=pr[0]&&d<=pr[1];});
-  if(q) list=list.filter(p=>(p.name+p.dept+p.id).toLowerCase().includes(q));
+  if(q) list=list.filter(p=>(p.name+p.dept+p.id+p.requester).toLowerCase().includes(q));
+  /* 신청자는 본인 신청만 보므로 담당부서·신청자 열을 숨긴다 */
+  const showWho=state.role!=='user';
+  const cols=showWho?[['사업명','32%'],['담당부서·신청자','16%'],['진행 단계','18%'],['상태','18%'],['처리 기한','16%']]
+    :[['사업명','30%'],['담당자','22%'],['진행 단계','16%'],['상태','16%'],['처리 기한','16%']];
+  const sqLabel=showWho?'사업명·부서·신청자 검색':'사업명·신청번호 검색';
   const PER=5, pages=Math.max(1,Math.ceil(list.length/PER)); state.page=Math.min(Math.max(1,state.page||1),pages); const pg=state.page;
   const attention=policies.filter(p=>!p.retired&&policyStatus(p).attention).length;
   const head={user:['신청 현황','신청한 사업이 어느 단계에 있고 다음에 무엇을 해야 하는지 확인합니다.'],
@@ -39,9 +44,9 @@ function renderDash(){
   ${(state.role==='infra'||state.role==='sec')&&attention?`<div class="notice n-warning">${I.warn}<p>만료가 다가오거나 오래 쓰지 않은 방화벽 정책이 ${attention}건 있습니다. <a href="policies.html">정책 수명주기에서 확인하기</a></p></div>`:''}
   <section aria-labelledby="sum-h"><h2 id="sum-h" class="sr-only">요약</h2>
   <div class="stats">${statDefs.map(([k,l,ic,n,d])=>`<button type="button" class="stat" data-act="stat" data-k="${k}" aria-pressed="${state.filter===k}">
-    <span class="stat-top"><span>${l}</span>${ic}</span><span class="stat-num">${n}<small>건</small></span></button>`).join('')}</div></section>
+    <span class="stat-l">${ic}<span>${l}</span></span><span class="stat-num">${n}<small>건</small></span></button>`).join('')}</div></section>
   <section aria-labelledby="list-h">
-    <div class="sec-head"><h2 class="h-sec" id="list-h">신청 내역<span class="count">${projects.length}</span></h2><ul class="st-legend" aria-label="진행 단계 색상">${STAGES.map((n,i)=>`<li><i style="background:var(--st${i+1})" aria-hidden="true"></i>${i+1}. ${n}</li>`).join('')}</ul></div>
+    <div class="sec-head"><h2 class="h-sec" id="list-h">신청 내역<span class="count">${all.length}</span></h2><ul class="st-legend" aria-label="진행 단계 색상">${STAGES.map((n,i)=>`<li><i style="background:var(--st${i+1})" aria-hidden="true"></i>${i+1}. ${n}</li>`).join('')}</ul></div>
     <div class="toolbar">
       <div class="pills" role="group" aria-label="상태로 거르기">${pillDefs.map(([k,l])=>`<button type="button" class="pill" data-act="stat" data-k="${k}" aria-pressed="${state.filter===k}">${l}</button>`).join('')}</div>
       <div class="dfilter">
@@ -51,16 +56,17 @@ function renderDash(){
           <span aria-hidden="true">~</span>
           <label for="pf-to">종료일</label><input type="date" id="pf-to" class="input" value="${esc(state.to||'')}" max="${TODAY_STR}" aria-describedby="pf-e">
         </div>
-        <div class="search" role="search"><label for="sq" class="sr-only">프로젝트명·부서 검색</label>
-          <input id="sq" class="input" type="search" placeholder="프로젝트명·부서 검색" value="${esc(state.q)}">
+        <div class="search" role="search"><label for="sq" class="sr-only">${sqLabel}</label>
+          <input id="sq" class="input" type="search" placeholder="${sqLabel}" value="${esc(state.q)}">
           <button type="button" class="sbtn" data-act="search" aria-label="검색">${I.search}</button></div>
       </div>
     </div>
     <p class="ferr" id="pf-e" hidden></p>
     <p class="filter-state" role="status">${pillDefs.find(x=>x[0]===state.filter)[1]} ${q?`, 검색어 “${esc(state.q)}”`:''}${pr?`, 접수 기간 ${pr[0]==='0000-00-00'?'처음':dot(pr[0])} ~ ${pr[1]==='9999-12-31'?'오늘':dot(pr[1])}`:''} 결과 ${list.length}건${pages>1?`, ${pg} / ${pages}페이지`:''}
       ${(state.filter!=='all'||q||pr)?'<button type="button" class="btn btn-tertiary btn-sm" data-act="reset-filter">조건 초기화</button>':''}</p>
-    ${list.length?`<div class="tbl-wrap"><table class="tbl"><caption class="sr-only">신청 내역 목록</caption>
-      <thead><tr><th scope="col">신청번호·프로젝트명</th><th scope="col">진행 단계</th><th scope="col">다음 할 일</th><th scope="col">처리 기한</th><th scope="col">상태</th><th scope="col">처리</th></tr></thead>
+    ${list.length?`<div class="tbl-wrap"><table class="tbl rows-link"><caption class="sr-only">신청 내역 목록. 행을 누르면 신청 상세로 이동합니다.</caption>
+      <colgroup>${cols.map(([,w])=>`<col style="width:${w}">`).join('')}</colgroup>
+      <thead><tr>${cols.map(([l])=>`<th scope="col">${l}</th>`).join('')}</tr></thead>
       <tbody>${list.slice((pg-1)*PER,pg*PER).map(rowHTML).join('')}</tbody></table></div>${pager(pg,pages)}`
       :`<div class="empty-box">${q?'검색 결과가 없습니다. 검색어를 바꾸거나 조건을 초기화해 주세요.':'이 조건에 해당하는 신청이 없습니다.'}</div>`}
   </section>`;
@@ -74,12 +80,36 @@ function taskCard(p){
     <div class="task-foot"><span class="when">${I.clock}${when}</span>
       <a class="btn" href="${href}" data-resume="${p.stage===0?p.id:''}" aria-label="${esc(p.name)} 작업 이어가기">${I.arrow}작업 이어가기</a></div></article>`;
 }
+/* 신청자 화면의 담당자 열: ICT인프라 → 정보보안 순서로 배정된 담당자와 분야별 진행 */
+function fieldState(p,r){
+  const done=r==='infra'?p.infraDone:p.secDone;
+  if(p.stage===3&&r==='sec') return ['now','최종 검토 중'];
+  if(p.stage>=2||done) return ['done','완료'];
+  if(waitingUser(p)&&openSupps(p).some(s=>s.from===FIELD[r])) return ['warn','보완 요청'];
+  if(r==='infra'&&p.returnedInfra) return ['warn','보완 요청'];
+  if(p.cfg.order==='seq'&&r==='sec'&&!p.infraDone) return ['wait','대기'];
+  return ['now',r==='infra'?'입력 중':'검토 중'];
+}
+function assignCell(p){
+  if(p.stage===0) return '<span class="asg-none">협의 요청 후 배정</span>';
+  return `<ul class="asg">${['infra','sec'].map(r=>{const [k,t]=fieldState(p,r);
+    return `<li><span class="asg-f">${FIELD[r]}</span><span class="asg-n">${esc(ROLES[r].person)}</span><span class="asg-s s-${k}">${t}</span></li>`;}).join('')}</ul>`;
+}
+/* 상태 아래 한 줄: 지금 누구 차례인지 (다음 할 일 열 대신) */
+function turnLine(p){
+  const t=turns(p); if(!t.length) return '';
+  if(t.includes(state.role)) return `<span class="turn me">${esc(nextTodo(p))}</span>`;
+  if(state.role==='user') return ''; /* 신청자는 담당자 열에서 분야별 진행을 보므로 생략 */
+  const txt=p.stage===1&&!waitingUser(p)?t.map(r=>r==='infra'?'ICT인프라 통신 정보 입력 중':'정보보안 검토 중').join(', ')
+    :p.stage===3?'정보보안 최종 검토 중':p.stage===0?'신청자 작성 중':waitingUser(p)?'신청자 보완 답변 대기':'신청자 최종 제출 대기';
+  return `<span class="turn">${txt}</span>`;
+}
 function rowHTML(p){
   const [s,c]=statusOf(p);
   const over=(dueLeft(p)??1)<0;
-  return `<tr class="${over?'overdue':''}"><td><div class="p-id">${p.id}</div><div class="p-name"><a href="request-detail.html?id=${p.id}">${esc(p.name)}</a></div><div class="p-meta">${esc(p.dept)}, 접수 ${dot(regDate(p))}, 설정 v${p.ver}</div></td>
-    <td>${bars(p)}</td><td>${esc(nextTodo(p))}</td><td>${dueCell(p)}</td><td><span class="badge ${c}">${s}</span></td>
-    <td><a class="link-more" href="request-detail.html?id=${p.id}" aria-label="${esc(p.name)} 상세 보기">${I.chev}<span>상세 보기</span></a></td></tr>`;
+  return `<tr class="${over?'overdue':''}"><td><div class="p-id">${p.id}</div><div class="p-name"><a href="request-detail.html?id=${p.id}">${esc(p.name)}</a></div><div class="p-meta">접수일 ${dot(regDate(p))}</div></td>
+    ${state.role!=='user'?`<td><div>${esc(p.dept)}</div><div class="p-meta">${esc(p.requester)}</div></td>`:`<td>${assignCell(p)}</td>`}
+    <td>${bars(p)}</td><td><span class="badge ${c}">${s}</span>${turnLine(p)}</td><td>${dueCell(p)}</td></tr>`;
 }
 
 

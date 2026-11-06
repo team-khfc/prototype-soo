@@ -111,7 +111,7 @@ legend{padding:0;margin-bottom:.8rem}
 .n-danger ul,.n-warning ul{margin:.4rem 0 0;padding-left:2rem}
 .n-danger a{color:var(--sf-danger-text)}
 .empty-box{border:1px dashed var(--sf-border-strong);border-radius:var(--r-card);padding:3.2rem;text-align:center;color:var(--sf-muted);background:var(--sf-surface)}
-.tbl-wrap{overflow-x:auto;background:var(--sf-surface);border-radius:0 0 var(--r-card) var(--r-card)}
+.tbl-wrap{position:relative;overflow-x:auto;background:var(--sf-surface);border-radius:0 0 var(--r-card) var(--r-card)}
 table.tbl{width:100%;border-collapse:collapse;min-width:86rem}
 .tbl caption{text-align:left;padding:0 0 .8rem}
 .tbl thead th{border-top:2px solid var(--sf-text);border-bottom:1px solid var(--sf-border);background:var(--sf-surface);font-size:1.5rem;font-weight:400;color:var(--sf-muted);text-align:left;padding:1.4rem 1.6rem;white-space:nowrap}
